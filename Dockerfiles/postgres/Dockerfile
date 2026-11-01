@@ -1,8 +1,8 @@
 FROM postgres:13
 
-# Variables de entorno
-ENV POSTGRES_DB=mlops_ceia
-ENV POSTGRES_USER=postgres
-ENV POSTGRES_PASSWORD=postgres
+# Agregamos los files de las bases
+COPY datasets/ /datasets/
 
-COPY create_schemas.sql create_table.sql  /docker-entrypoint-initdb.d/
+# Script para iniciar los schemas medallion
+COPY postgres/create_schemas.sql /docker-entrypoint-initdb.d/01_create_schemas.sql
+
