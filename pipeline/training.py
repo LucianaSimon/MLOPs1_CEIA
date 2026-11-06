@@ -1,4 +1,4 @@
-"""Gold -> Modelo: pipeline de Random Forest, validación cruzada y evaluación."""
+"""Gold -> Modelo: Random Forest de satisfacción, validación cruzada y evaluación."""
 
 import pandas as pd
 from sklearn.compose import ColumnTransformer
@@ -21,44 +21,73 @@ from pipeline.config import (
 )
 
 
-def build_pipeline() -> Pipeline:
-    preprocessor = ColumnTransformer([
-        ("numeric", "passthrough", NUMERIC_FEATURES),
-        ("service", "passthrough", ORDINAL_FEATURES),
-        ("nominal", OneHotEncoder(handle_unknown="ignore", drop="first"), NOMINAL_FEATURES),
-        ("service_indicators", "passthrough", RATED_FEATURES),
-    ])
-    return Pipeline([
-        ("preprocessor", preprocessor),
-        ("model", RandomForestClassifier(random_state=RANDOM_STATE)),
-    ])
+class SatisfactionClassifier:
+    """Random Forest que predice la satisfacción a partir de datos de gold.
 
+    Recibe DataFrames de gold completos (con id y target) y separa X e y internamente:
 
-def split_xy(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
-    return df[FEATURES], df[TARGET]
+        classifier = SatisfactionClassifier()
+        cv_metrics = classifier.cross_validate(gold_train)
+        classifier.fit(gold_train)
+        test_metrics = classifier.evaluate(gold_test)
+    """
 
+    def __init__(self, random_state: int = RANDOM_STATE, cv_splits: int = CV_SPLITS):
+        self.random_state = random_state
+        self.cv_splits = cv_splits
+        self.pipeline = self._build_pipeline()
 
-def eval_metrics(y_true, y_pred, pos_label=POS_LABEL) -> dict:
-    return {
-        "fbeta_0.5": fbeta_score(y_true, y_pred, beta=0.5, pos_label=pos_label),
-        "f1": f1_score(y_true, y_pred, pos_label=pos_label),
-        "precision": precision_score(y_true, y_pred, pos_label=pos_label),
-        "recall": recall_score(y_true, y_pred, pos_label=pos_label),
-    }
+    def fit(self, df: pd.DataFrame) -> "SatisfactionClassifier":
+        X, y = self._split_xy(df)
+        self.pipeline.fit(X, y)
+        return self
 
+    def predict(self, df: pd.DataFrame):
+        return self.pipeline.predict(df[FEATURES])
 
-def cross_validate(train: pd.DataFrame) -> dict:
-    X, y = split_xy(train)
-    cv = StratifiedKFold(n_splits=CV_SPLITS, shuffle=True, random_state=RANDOM_STATE)
-    y_pred = cross_val_predict(build_pipeline(), X, y, cv=cv)
-    return eval_metrics(y, y_pred)
+    def evaluate(self, df: pd.DataFrame) -> dict:
+        """Métricas del modelo ya entrenado sobre df."""
+        _, y = self._split_xy(df)
+        return self._metrics(y, self.predict(df))
 
+    def cross_validate(self, df: pd.DataFrame) -> dict:
+        """Métricas de validación cruzada estratificada. No modifica el modelo entrenado."""
+        X, y = self._split_xy(df)
+        cv = StratifiedKFold(
+            n_splits=self.cv_splits, shuffle=True, random_state=self.random_state
+        )
+        y_pred = cross_val_predict(self._build_pipeline(), X, y, cv=cv)
+        return self._metrics(y, y_pred)
 
-def train(train: pd.DataFrame) -> Pipeline:
-    X, y = split_xy(train)
-    return build_pipeline().fit(X, y)
+    def _build_pipeline(self) -> Pipeline:
+        preprocessor = ColumnTransformer(
+            [
+                ("numeric", "passthrough", NUMERIC_FEATURES),
+                ("service", "passthrough", ORDINAL_FEATURES),
+                (
+                    "nominal",
+                    OneHotEncoder(handle_unknown="ignore", drop="first"),
+                    NOMINAL_FEATURES,
+                ),
+                ("service_indicators", "passthrough", RATED_FEATURES),
+            ]
+        )
+        return Pipeline(
+            [
+                ("preprocessor", preprocessor),
+                ("model", RandomForestClassifier(random_state=self.random_state)),
+            ]
+        )
 
+    @staticmethod
+    def _split_xy(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
+        return df[FEATURES], df[TARGET]
 
-def evaluate(model: Pipeline, test: pd.DataFrame) -> dict:
-    X, y = split_xy(test)
-    return eval_metrics(y, model.predict(X))
+    @staticmethod
+    def _metrics(y_true, y_pred) -> dict:
+        return {
+            "fbeta_0.5": fbeta_score(y_true, y_pred, beta=0.5, pos_label=POS_LABEL),
+            "f1": f1_score(y_true, y_pred, pos_label=POS_LABEL),
+            "precision": precision_score(y_true, y_pred, pos_label=POS_LABEL),
+            "recall": recall_score(y_true, y_pred, pos_label=POS_LABEL),
+        }
