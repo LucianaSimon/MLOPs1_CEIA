@@ -1,0 +1,4 @@
+*
+!Dockerfiles/trainer/requirements.txt
+!pipeline/
+**/__pycache__
