@@ -17,8 +17,8 @@ class ConditionalMedianImputer(BaseEstimator, TransformerMixin):
     """Imputa arrival_delay_in_minutes con la mediana de su grupo de departure_delay_in_minutes.
 
     La ausencia de arrival_delay es MAR respecto de departure_delay, por eso la mediana
-    se calcula por grupo. Las medianas se aprenden solo sobre train (fit) y se aplican
-    a train y test (transform).
+    se calcula por grupo. Las medianas se aprenden solo sobre train y se aplican
+    a train y test.
     """
 
     def __init__(self, bins=DEPARTURE_DELAY_BINS):
@@ -28,13 +28,17 @@ class ConditionalMedianImputer(BaseEstimator, TransformerMixin):
         return pd.cut(X[DEPARTURE_DELAY_COLUMN], bins=self.bins)
 
     def fit(self, X: pd.DataFrame, y=None):
-        self.medians_ = X.groupby(self._groups(X), observed=True)[ARRIVAL_DELAY_COLUMN].median()
+        self.medians_ = X.groupby(self._groups(X), observed=True)[
+            ARRIVAL_DELAY_COLUMN
+        ].median()
         return self
 
     def transform(self, X: pd.DataFrame) -> pd.DataFrame:
         X = X.copy()
         conditional_medians = self._groups(X).astype("object").map(self.medians_)
-        X[ARRIVAL_DELAY_COLUMN] = X[ARRIVAL_DELAY_COLUMN].fillna(conditional_medians).astype("float64")
+        X[ARRIVAL_DELAY_COLUMN] = (
+            X[ARRIVAL_DELAY_COLUMN].fillna(conditional_medians).astype("float64")
+        )
         return X
 
 
