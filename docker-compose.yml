@@ -16,8 +16,29 @@ services:
         - POSTGRES_PASSWORD=postgres
       #volumes:
       #  - db_data:/var/lib/postgresql/data
-      #healthcheck:
-        #test: ["CMD", "pg_isready", "-p", "5432", "-U", "${PG_USER:-airflow}"]
-        #interval: 60s
-        #timeout: 20s
-        #retries: 3
+      # -h localhost: durante la carga de bronze (initdb) Postgres solo escucha por socket,
+      # así que el healthcheck recién pasa cuando los scripts de init terminaron
+      healthcheck:
+        test: ["CMD", "pg_isready", "-h", "localhost", "-U", "postgres", "-d", "mlops_ceia"]
+        interval: 5s
+        timeout: 5s
+        retries: 20
+
+  trainer:
+      build:
+        context: .
+        dockerfile: Dockerfiles/trainer/Dockerfile
+      image: trainer_system
+      container_name: trainer
+      depends_on:
+        postgres:
+          condition: service_healthy
+      environment:
+        - POSTGRES_HOST=postgres
+        - POSTGRES_PORT=5432
+        - POSTGRES_DB=mlops_ceia
+        - POSTGRES_USER=postgres
+        - POSTGRES_PASSWORD=postgres
+        - ARTIFACTS_DIR=/artifacts
+      volumes:
+        - ./artifacts:/artifacts
