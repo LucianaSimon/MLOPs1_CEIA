@@ -45,6 +45,17 @@ class SatisfactionClassifier:
     def predict(self, df: pd.DataFrame):
         return self.pipeline.predict(df[FEATURES])
 
+    def logged_params(self) -> dict[str, str]:
+        """Hiperparámetros del Random Forest y datos de la validación cruzada."""
+        model = self.pipeline.named_steps["model"]
+        params = {
+            "estimator": type(model).__name__,
+            "cv_splits": str(self.cv_splits),
+            "pos_label": POS_LABEL,
+        }
+        params.update({f"rf_{key}": str(value) for key, value in model.get_params().items()})
+        return params
+
     def evaluate(self, df: pd.DataFrame) -> dict:
         """Métricas del modelo ya entrenado sobre df."""
         _, y = self._split_xy(df)
