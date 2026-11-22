@@ -8,11 +8,17 @@ import os
 from pathlib import Path
 
 import joblib
+import mlflow
+import pandas as pd
+from mlflow.models import infer_signature
 
 from pipeline.cleaning import DataCleaner
+from pipeline.config import FEATURES
 from pipeline.database import Database
 from pipeline.features import FeatureBuilder
 from pipeline.training import SatisfactionClassifier
+
+EXPERIMENT = "passenger_satisfaction"
 
 TABLES = {
     "train": "passenger_satisfaction_train",
@@ -27,6 +33,9 @@ class MedallionPipeline:
     - model.joblib: DataCleaner (con las medianas de train), FeatureBuilder y
       SatisfactionClassifier entrenado, para aplicar sobre datos nuevos de bronze.
     - metrics.json: métricas de validación cruzada y de test.
+
+    Si MLFLOW_TRACKING_URI está definido, la misma corrida queda como un
+    experimento: hiperparámetros del Random Forest, métricas y el modelo.
     """
 
     def __init__(self, db: Database, artifacts_dir: Path):
@@ -54,6 +63,7 @@ class MedallionPipeline:
         metrics["test"] = self.classifier.evaluate(gold["test"])
 
         self._save(metrics)
+        self._log_experiment(metrics, gold["train"])
         return metrics
 
     def _write(self, schema: str, data: dict) -> None:
@@ -72,6 +82,36 @@ class MedallionPipeline:
             self.artifacts_dir / "model.joblib",
         )
         (self.artifacts_dir / "metrics.json").write_text(json.dumps(metrics, indent=2))
+
+    def _log_experiment(self, metrics: dict, train: pd.DataFrame) -> None:
+        tracking_uri = os.environ.get("MLFLOW_TRACKING_URI")
+        if not tracking_uri:
+            print("MLFLOW_TRACKING_URI no está definido: no se registra el experimento")
+            return
+
+        sample = train.head(20)
+        signature = infer_signature(sample[FEATURES], self.classifier.predict(sample))
+        flat_metrics = {
+            f"{split}_{name}": float(value)
+            for split, values in metrics.items()
+            for name, value in values.items()
+        }
+
+        mlflow.set_tracking_uri(tracking_uri)
+        mlflow.set_experiment(EXPERIMENT)
+        with mlflow.start_run():
+            mlflow.log_params(self.classifier.logged_params())
+            mlflow.log_metrics(flat_metrics)
+            mlflow.sklearn.log_model(
+                self.classifier.pipeline,
+                name="satisfaction_model",
+                signature=signature,
+                input_example=sample[FEATURES],
+                serialization_format="cloudpickle",
+                registered_model_name=EXPERIMENT,
+            )
+            mlflow.log_artifact(self.artifacts_dir / "model.joblib")
+            print(f"Experimento {EXPERIMENT} registrado en {tracking_uri}")
 
 
 if __name__ == "__main__":

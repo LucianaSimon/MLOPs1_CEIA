@@ -14,8 +14,8 @@ services:
         - POSTGRES_DB=mlops_ceia
         - POSTGRES_USER=postgres
         - POSTGRES_PASSWORD=postgres
-      #volumes:
-      #  - db_data:/var/lib/postgresql/data
+      volumes:
+        - db_data:/var/lib/postgresql/data
       # -h localhost: durante la carga de bronze (initdb) Postgres solo escucha por socket,
       # así que el healthcheck recién pasa cuando los scripts de init terminaron
       healthcheck:
@@ -30,8 +30,11 @@ services:
         dockerfile: Dockerfiles/trainer/Dockerfile
       image: trainer_system
       container_name: trainer
+      restart: on-failure
       depends_on:
         postgres:
+          condition: service_healthy
+        mlflow:
           condition: service_healthy
       environment:
         - POSTGRES_HOST=postgres
@@ -40,9 +43,66 @@ services:
         - POSTGRES_USER=postgres
         - POSTGRES_PASSWORD=postgres
         - ARTIFACTS_DIR=/artifacts
+        - MLFLOW_TRACKING_URI=http://mlflow:5000
+        - GIT_PYTHON_REFRESH=quiet
       volumes:
         - ./artifacts:/artifacts
-   
+
+  mlflow:
+      build:
+        context: ./Dockerfiles
+        dockerfile: mlflow/Dockerfile
+      image: mlflow_system
+      container_name: mlflow
+      restart: unless-stopped
+      depends_on:
+        postgres:
+          condition: service_healthy
+      ports:
+        - "5000:5000"
+      environment:
+        - MLFLOW_SERVER_ALLOWED_HOSTS=*
+        - MLFLOW_BACKEND_STORE_URI=postgresql+psycopg2://postgres:postgres@postgres:5432/mlflow_db
+      command:
+        - /bin/bash
+        - -c
+        - |
+          mkdir -p /mlflow/artifacts
+          exec mlflow server \
+            --host 0.0.0.0 \
+            --port 5000 \
+            --backend-store-uri postgresql+psycopg2://postgres:postgres@postgres:5432/mlflow_db \
+            --serve-artifacts \
+            --artifacts-destination /mlflow/artifacts
+      volumes:
+        - mlflow_data:/mlflow
+      healthcheck:
+        test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+        interval: 5s
+        timeout: 5s
+        retries: 20
+
+  prediction:
+    build:
+      context: .
+      dockerfile: Dockerfiles/prediction/Dockerfile
+    image: prediction_system
+    container_name: prediction
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mlflow:
+        condition: service_healthy
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=mlops_ceia
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - GIT_PYTHON_REFRESH=quiet
+
   s3:
     restart: always
     image: coollabsio/minio:RELEASE.2025-04-22T22-12-26Z
@@ -50,7 +110,6 @@ services:
     ports:
       - "9000:9000"
       - "9001:9001"
-
     networks:
       - backend
     environment:
@@ -73,8 +132,12 @@ services:
     networks:
       - backend
     entrypoint: >
-      /bin/sh -c ' sleep 5; /usr/bin/mc alias set s3 http://s3:9000 minio minio123; /usr/bin/mc mb s3/data; exit 0; '        
+      /bin/sh -c ' sleep 5; /usr/bin/mc alias set s3 http://s3:9000 minio minio123; /usr/bin/mc mb s3/data; exit 0; '
 
 networks:
   backend:
     driver: bridge
+
+volumes:
+  db_data:
+  mlflow_data:
