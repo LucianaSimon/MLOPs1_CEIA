@@ -31,4 +31,9 @@ class FeatureBuilder(BaseEstimator, TransformerMixin):
         X = X.copy()
         for col, rated_col in zip(ORDINAL_FEATURES, RATED_FEATURES):
             X[rated_col] = (X[col] > 0).astype(int)
-        return X[[ID_COLUMN] + FEATURES + [TARGET]]
+        columnas = [ID_COLUMN] + FEATURES
+
+        if TARGET in X.columns:
+            columnas.append(TARGET)
+
+        return X[columnas]

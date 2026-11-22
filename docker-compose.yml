@@ -82,6 +82,27 @@ services:
         timeout: 5s
         retries: 20
 
+  prediction:
+    build:
+      context: .
+      dockerfile: Dockerfiles/prediction/Dockerfile
+    image: prediction_system
+    container_name: prediction
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mlflow:
+        condition: service_healthy
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=mlops_ceia
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - GIT_PYTHON_REFRESH=quiet
+
 volumes:
   db_data:
   mlflow_data:

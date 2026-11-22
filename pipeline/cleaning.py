@@ -39,7 +39,8 @@ class DataCleaner(BaseEstimator, TransformerMixin):
 
     def transform(self, X: pd.DataFrame) -> pd.DataFrame:
         X = X.drop(columns=DROP_COLUMNS, errors="ignore")
-        X[TARGET] = X[TARGET].replace(TARGET_RENAME)
+        if TARGET in X.columns:
+            X[TARGET] = X[TARGET].replace(TARGET_RENAME)
         conditional_medians = self._groups(X).astype("object").map(self.medians_)
         X[ARRIVAL_DELAY_COLUMN] = (
             X[ARRIVAL_DELAY_COLUMN].fillna(conditional_medians).astype("float64")
