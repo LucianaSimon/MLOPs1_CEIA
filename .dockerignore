@@ -1,4 +1,10 @@
 *
+!Dockerfiles/
+!Dockerfiles/trainer/
 !Dockerfiles/trainer/requirements.txt
+!Dockerfiles/prediction/
+!Dockerfiles/prediction/requirements.txt
 !pipeline/
+!pipeline/**
+!predictions.py
 **/__pycache__
